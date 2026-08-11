@@ -1,28 +1,141 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { z } from "zod";
+import * as db from "./db";
+import { TRPCError } from "@trpc/server";
+import { SignJWT } from "jose";
+import { ENV } from "./_core/env";
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
+    customLogin: publicProcedure
+      .input(z.object({ email: z.string(), password: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.email === "almoxadm" && input.password === "admsuporte") {
+          const adminOpenId = "admin_almoxadm_fixed";
+          await db.upsertUser({
+            openId: adminOpenId,
+            name: "Administrador Forvia",
+            email: "almoxsuporte@forvia.com",
+            role: "admin",
+            loginMethod: "custom_admin",
+          });
+          const user = await db.getUserByOpenId(adminOpenId);
+          if (user) {
+            const secret = new TextEncoder().encode(ENV.cookieSecret);
+            const token = await new SignJWT({ openId: user.openId })
+              .setProtectedHeader({ alg: "HS256" })
+              .setIssuedAt()
+              .setExpirationTime("30d")
+              .sign(secret);
+
+            const cookieOptions = getSessionCookieOptions(ctx.req);
+            ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+            return { success: true, user };
+          }
+        }
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Credenciais inválidas. Use almoxadm / admsuporte para administrador." });
+      }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  catalog: router({
+    list: publicProcedure.query(async () => {
+      return await db.getItems();
+    }),
+    create: protectedProcedure
+      .input(z.object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        category: z.string().min(1),
+        unit: z.string().min(1),
+        stock: z.number().int().min(0),
+        minStock: z.number().int().min(0),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores podem cadastrar itens." });
+        }
+        return await db.createItem(input);
+      }),
+  }),
+
+  requisition: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a administradores." });
+      }
+      return await db.getRequisitions();
+    }),
+    create: publicProcedure
+      .input(z.object({
+        requesterName: z.string().min(2),
+        area: z.string().min(2),
+        itemId: z.number().int(),
+        quantity: z.number().int().min(1),
+        justification: z.string().min(3),
+      }))
+      .mutation(async ({ input }) => {
+        const id = await db.createRequisition({
+          ...input,
+          status: 'pendente',
+        });
+        return { id, success: true };
+      }),
+    updateStatus: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        status: z.enum(['aprovada', 'recusada']),
+        adminObservation: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores podem aprovar ou recusar requisições." });
+        }
+        await db.updateRequisitionStatus(input.id, input.status, input.adminObservation || "", ctx.user.name || "Administrador");
+        return { success: true };
+      }),
+  }),
+
+  stock: router({
+    movements: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores podem ver o histórico de movimentações." });
+      }
+      return await db.getStockMovements();
+    }),
+    move: protectedProcedure
+      .input(z.object({
+        itemId: z.number().int(),
+        type: z.enum(['entrada', 'saida']),
+        quantity: z.number().int().min(1),
+        reason: z.string().min(2),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores podem registrar entradas e saídas de estoque." });
+        }
+        await db.createStockMovement({
+          ...input,
+          responsible: ctx.user.name || "Administrador",
+        });
+        return { success: true };
+      }),
+    stats: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores podem ver estatísticas completas." });
+      }
+      return await db.getDashboardStats();
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

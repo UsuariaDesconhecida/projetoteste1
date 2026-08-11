@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { seedInitialItems } from "../seed";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -58,6 +59,11 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
+  try {
+    await seedInitialItems();
+  } catch (e) {
+    console.error("Seed error:", e);
+  }
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
