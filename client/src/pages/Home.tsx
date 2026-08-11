@@ -83,7 +83,7 @@ function StatusBadge({ status }: { status: "pendente" | "aprovada" | "recusada" 
 }
 
 export default function Home() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, refresh } = useAuth();
   const isAdmin = user?.role === "admin";
   const navigation = getNavigationForRole(isAdmin ? "admin" : "solicitante").map((item) => ({
     ...item,
@@ -116,11 +116,22 @@ export default function Home() {
   const [newItemUnit, setNewItemUnit] = useState("un");
   const [newItemStock, setNewItemStock] = useState("0");
   const [newItemMinStock, setNewItemMinStock] = useState("5");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
 
   const catalogQuery = trpc.catalog.list.useQuery();
   const requisitionsQuery = trpc.requisition.list.useQuery(undefined, { enabled: isAdmin });
   const statsQuery = trpc.stock.stats.useQuery(undefined, { enabled: isAdmin });
   const movementsQuery = trpc.stock.movements.useQuery(undefined, { enabled: isAdmin });
+  const adminLoginMutation = trpc.auth.adminLogin.useMutation({
+    onSuccess: async () => {
+      toast.success("Acesso administrativo realizado com sucesso.");
+      setAdminEmail("");
+      setAdminPassword("");
+      await refresh();
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   useEffect(() => {
     if (!isAdmin && activeTab !== "requisicao") {
@@ -232,7 +243,7 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-6 relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(220,38,38,0.18),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(30,64,175,0.16),transparent_42%)]" />
-        <Card className="relative w-full max-w-md bg-slate-900/95 border-slate-800 shadow-2xl">
+        <Card className="relative w-full max-w-4xl bg-slate-900/95 border-slate-800 shadow-2xl">
           <CardHeader className="space-y-5 text-center">
             <div className="mx-auto bg-red-600 text-white p-3 rounded-2xl w-fit shadow-lg shadow-red-950/40">
               <Boxes className="w-8 h-8" />
@@ -244,14 +255,27 @@ export default function Home() {
               </CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
-              <p className="font-semibold text-white">Acesso corporativo</p>
-              <p className="mt-1 leading-relaxed">Entre com suas credenciais Forvia para acessar as funcionalidades liberadas para o seu perfil.</p>
+          <CardContent>
+            <div className="grid gap-5 lg:grid-cols-2 lg:items-stretch">
+              <div className="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-5">
+                <div className="text-sm text-slate-300">
+                  <p className="font-semibold text-white">Acesso corporativo</p>
+                  <p className="mt-1 leading-relaxed">Entre com suas credenciais Forvia para acessar as funcionalidades liberadas para o seu perfil.</p>
+                </div>
+                <Button onClick={() => startLogin()} className="mt-auto w-full bg-red-600 hover:bg-red-700 text-white font-semibold h-11">
+                  Entrar com acesso Forvia
+                </Button>
+              </div>
+              <form onSubmit={(event) => { event.preventDefault(); adminLoginMutation.mutate({ email: adminEmail, password: adminPassword }); }} className="flex flex-col gap-3 rounded-xl border border-red-500/20 bg-red-500/5 p-5">
+                <div><p className="font-semibold text-white">Acesso Administrativo</p><p className="mt-1 text-xs leading-relaxed text-slate-400">Use este acesso somente para a gestão completa do almoxarifado.</p></div>
+                <div className="space-y-1.5"><Label htmlFor="admin-email" className="text-xs uppercase tracking-wider text-slate-300">E-mail administrativo</Label><Input id="admin-email" type="email" autoComplete="username" placeholder="Digite o e-mail administrativo" value={adminEmail} onChange={(event) => setAdminEmail(event.target.value)} className="bg-slate-950 border-slate-800 text-white" required /></div>
+                <div className="space-y-1.5"><Label htmlFor="admin-password" className="text-xs uppercase tracking-wider text-slate-300">Senha</Label><Input id="admin-password" type="password" autoComplete="current-password" placeholder="Digite a senha administrativa" value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} className="bg-slate-950 border-slate-800 text-white" minLength={12} required /></div>
+                <Button type="submit" disabled={adminLoginMutation.isPending} variant="outline" className="mt-auto w-full border-red-500/40 bg-transparent text-red-200 hover:bg-red-500/10 hover:text-white">
+                  {adminLoginMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
+                  Entrar como Administrador
+                </Button>
+              </form>
             </div>
-            <Button onClick={() => startLogin()} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold h-11">
-              Entrar com acesso Forvia
-            </Button>
           </CardContent>
         </Card>
       </div>

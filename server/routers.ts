@@ -1,15 +1,61 @@
-import { COOKIE_NAME } from "@shared/const";
+import { timingSafeEqual } from "node:crypto";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { sdk } from "./_core/sdk";
+import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { TRPCError } from "@trpc/server";
 
+function safeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+const ADMIN_OPEN_ID = "custom_admin_almoxadm_suporte";
+const ADMIN_DISPLAY_NAME = "Administrador Almoxarifado";
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    adminLogin: publicProcedure
+      .input(z.object({ email: z.string().email(), password: z.string().min(12) }))
+      .mutation(async ({ input, ctx }) => {
+        const expectedEmail = ENV.adminLoginEmail.trim().toLowerCase();
+        const providedEmail = input.email.trim().toLowerCase();
+        const isValid = Boolean(ENV.adminLoginEmail && ENV.adminLoginPassword)
+          && safeEqual(providedEmail, expectedEmail)
+          && safeEqual(input.password, ENV.adminLoginPassword);
+
+        if (!isValid) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Credenciais administrativas inválidas." });
+        }
+
+        await db.upsertUser({
+          openId: ADMIN_OPEN_ID,
+          name: ADMIN_DISPLAY_NAME,
+          email: expectedEmail,
+          loginMethod: "admin",
+          role: "admin",
+          lastSignedIn: new Date(),
+        });
+        const user = await db.getUserByOpenId(ADMIN_OPEN_ID);
+        if (!user) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível criar a sessão administrativa." });
+        }
+
+        const sessionToken = await sdk.createSessionToken(ADMIN_OPEN_ID, {
+          name: ADMIN_DISPLAY_NAME,
+          expiresInMs: ONE_YEAR_MS,
+        });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+        return { success: true as const, user };
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });

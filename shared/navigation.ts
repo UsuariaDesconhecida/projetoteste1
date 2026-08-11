@@ -17,8 +17,10 @@ export function getNavigationForRole(role: NavigationRole) {
   return role === "admin" ? ADMIN_NAVIGATION : REQUESTER_NAVIGATION;
 }
 
+const ADMIN_EMAILS = new Set(["almoxsuporte@forvia.com", "almoxadm@suporte.com"]);
+
 export function isAdminEmail(email: string | null | undefined) {
-  return email?.trim().toLowerCase() === "almoxsuporte@forvia.com";
+  return email ? ADMIN_EMAILS.has(email.trim().toLowerCase()) : false;
 }
 
 export function normalizeRole(role: NavigationRole | null | undefined, email?: string | null) {

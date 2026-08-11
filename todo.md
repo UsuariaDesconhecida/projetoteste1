@@ -33,3 +33,11 @@
 - [x] Adicionar cobertura automatizada da lógica do autocomplete para busca por part number, descrição, limite de sugestões e seleção do item.
 - [x] Validar que o formulário não envia uma requisição quando há texto digitado sem item do catálogo selecionado.
 - [x] Isolar a preparação do payload da Nova Requisição e testar que texto digitado sem reqItemId não gera mutation.
+- [x] Configurar credenciais do administrador (`almoxadm@suporte.com` / `Admsuporte@1`) no backend.
+- [x] Implementar procedimento tRPC para login customizado do administrador.
+- [x] Adicionar formulário de Acesso Administrativo na tela de login, ao lado do botão de acesso Forvia.
+- [x] Testar autenticação do administrador e persistência de sessão.
+- [ ] Salvar checkpoint da entrega final com duplo método de acesso.
+- [x] Ajustar o layout da entrada para exibir o acesso Forvia e o acesso administrativo lado a lado em telas maiores.
+- [x] Testar que o cookie emitido pelo login administrativo resolve o usuário admin em uma requisição subsequente autenticada.
+- [x] Registrar a validação por compilação, build e captura visual autenticada do painel admin, incluindo o menu com os módulos administrativos.
