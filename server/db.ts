@@ -27,29 +27,30 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!db) return;
 
   try {
+    const isOwner = user.openId === ENV.ownerOpenId;
+    const isCustomAdmin = user.openId === "custom_admin_almoxadm_suporte";
+    const isAdmin = isOwner || isCustomAdmin || isAdminEmail(user.email) || user.role === "admin";
     const values: InsertUser = {
       openId: user.openId,
       name: user.name ?? null,
       email: user.email ?? null,
       loginMethod: user.loginMethod ?? null,
-      role: user.role ?? 'solicitante',
+      role: isAdmin ? "admin" : user.role === "user" || user.role === undefined ? "solicitante" : user.role,
       lastSignedIn: user.lastSignedIn ?? new Date(),
     };
 
-    if (user.openId === ENV.ownerOpenId || isAdminEmail(values.email)) {
-      values.role = 'admin';
-    } else if (!user.role || user.role === 'user') {
-      values.role = 'solicitante';
+    // Partial refreshes (for example, lastSignedIn on every request) must not
+    // overwrite a previously granted admin role with the default requester role.
+    const updateSet: Record<string, unknown> = {
+      name: values.name,
+      email: values.email,
+      lastSignedIn: values.lastSignedIn,
+    };
+    if (user.role !== undefined || isAdmin) {
+      updateSet.role = values.role;
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: {
-        name: values.name,
-        email: values.email,
-        role: values.role,
-        lastSignedIn: values.lastSignedIn,
-      },
-    });
+    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;

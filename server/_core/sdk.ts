@@ -313,10 +313,13 @@ class SDKServer {
 
     await db.upsertUser({
       openId: user.openId,
+      email: user.email,
+      role: user.role,
       lastSignedIn: signedInAt,
     });
 
-    return user;
+    const refreshedUser = await db.getUserByOpenId(user.openId);
+    return refreshedUser ?? user;
   }
 }
 

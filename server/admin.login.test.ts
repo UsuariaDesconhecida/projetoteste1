@@ -55,6 +55,27 @@ describe("auth.adminLogin", () => {
     expect(authenticatedUser.role).toBe("admin");
   }, 15000);
 
+  it("mantém o papel admin depois de atualizar a sessão no banco", async () => {
+    const { ctx, cookies } = createContext();
+    const caller = appRouter.createCaller(ctx);
+    await caller.auth.adminLogin({
+      email: process.env.ADMIN_LOGIN_EMAIL!,
+      password: process.env.ADMIN_LOGIN_PASSWORD!,
+    });
+
+    const request = {
+      protocol: "https",
+      headers: { cookie: `${COOKIE_NAME}=${cookies[0]!.value}` },
+    } as TrpcContext["req"];
+
+    const firstRequestUser = await sdk.authenticateRequest(request);
+    const secondRequestUser = await sdk.authenticateRequest(request);
+
+    expect(firstRequestUser.openId).toBe("custom_admin_almoxadm_suporte");
+    expect(firstRequestUser.role).toBe("admin");
+    expect(secondRequestUser.role).toBe("admin");
+  }, 20000);
+
   it("permite carregar requisições e indicadores com a sessão admin", async () => {
     const { ctx } = createContext();
     const caller = appRouter.createCaller(ctx);
@@ -65,12 +86,14 @@ describe("auth.adminLogin", () => {
 
     ctx.user = login.user;
 
-    const [requisitions, stats] = await Promise.all([
+    const [requisitions, stats, movements] = await Promise.all([
       caller.requisition.list(),
       caller.stock.stats(),
+      caller.stock.movements(),
     ]);
 
     expect(Array.isArray(requisitions)).toBe(true);
+    expect(Array.isArray(movements)).toBe(true);
     expect(stats).toMatchObject({
       pendingReqs: expect.any(Number),
       lowStockCount: expect.any(Number),

@@ -52,3 +52,10 @@
 - [x] Garantir que Dashboard e Requisições consultem dados após login administrativo e após criar uma requisição.
 - [x] Adicionar regressão para sessão admin em chamada protegida e estado vazio de requisições.
 - [x] Reexecutar check, testes, build e captura visual antes do checkpoint.
+## Correção do Papel Admin nas Queries Protegidas
+
+- [x] Inspecionar o helper de contexto backend (`server/_core/context.ts`) para ver como `ctx.user` é resolvido a partir do token de sessão.
+- [x] Verificar se `upsertUser` ou o carregamento do usuário do banco está sobrescrevendo o papel `admin` para `solicitante` ou `user`.
+- [x] Ajustar a verificação de administrador no backend para considerar tanto o openId customizado (`custom_admin_almoxadm_suporte`) quanto o e-mail administrativo corporativo (`almoxadm@suporte.com` ou `almoxsuporte@forvia.com`).
+- [x] Adicionar teste automatizado cobrindo `requisition.list`, `stock.stats` e `stock.movements` chamados pelo administrador customizado.
+- [ ] Salvar checkpoint e entregar a correção publicada.
