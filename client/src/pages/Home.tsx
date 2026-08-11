@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { getCatalogSelectionLabel, searchCatalogItems } from "@/lib/catalog-autocomplete";
+import { prepareRequisitionPayload } from "@/lib/requisition-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,11 +12,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   AlertTriangle,
   ArrowUpDown,
+  Check,
   BarChart3,
   Boxes,
   CheckCircle2,
@@ -93,6 +97,7 @@ export default function Home() {
   const [reqQuantity, setReqQuantity] = useState("1");
   const [reqJustification, setReqJustification] = useState("");
   const [itemSearch, setItemSearch] = useState("");
+  const [itemAutocompleteOpen, setItemAutocompleteOpen] = useState(false);
 
   const [evalModalOpen, setEvalModalOpen] = useState(false);
   const [selectedReqId, setSelectedReqId] = useState<number | null>(null);
@@ -132,6 +137,7 @@ export default function Home() {
       setReqQuantity("1");
       setReqJustification("");
       setItemSearch("");
+      setItemAutocompleteOpen(false);
     },
     onError: (error) => toast.error(`Erro ao enviar requisição: ${error.message}`),
   });
@@ -179,24 +185,40 @@ export default function Home() {
 
   const handleReqSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!reqItemId) {
-      toast.error("Selecione um item do catálogo.");
+    const payload = prepareRequisitionPayload({
+      requesterName: reqRequester,
+      area: reqArea,
+      itemId: reqItemId,
+      quantity: reqQuantity,
+      justification: reqJustification,
+    });
+    if (!payload) {
+      toast.error(!reqItemId.trim() ? "Selecione um item do catálogo." : "Informe uma quantidade válida.");
       return;
     }
 
-    createReqMutation.mutate({
-      requesterName: reqRequester.trim(),
-      area: reqArea,
-      itemId: Number(reqItemId),
-      quantity: Number(reqQuantity),
-      justification: reqJustification.trim(),
-    });
+    createReqMutation.mutate(payload);
   };
 
   const filteredCatalog = (catalogQuery.data ?? []).filter((item) =>
     `${item.code} ${item.name}`.toLowerCase().includes(itemSearch.toLowerCase()),
   );
-  const requestCatalogOptions = filteredCatalog.slice(0, 150);
+  const requestCatalogOptions = searchCatalogItems(catalogQuery.data ?? [], itemSearch, 150);
+  const selectedRequestItem = (catalogQuery.data ?? []).find((item) => item.id.toString() === reqItemId);
+
+  const handleItemSearchChange = (value: string) => {
+    setItemSearch(value);
+    setItemAutocompleteOpen(true);
+    if (selectedRequestItem && value !== getCatalogSelectionLabel(selectedRequestItem)) {
+      setReqItemId("");
+    }
+  };
+
+  const handleItemSelect = (item: (typeof requestCatalogOptions)[number]) => {
+    setReqItemId(item.id.toString());
+    setItemSearch(getCatalogSelectionLabel(item));
+    setItemAutocompleteOpen(false);
+  };
 
   if (loading) {
     return (
@@ -314,7 +336,7 @@ export default function Home() {
                       <div className="space-y-2"><Label className="text-xs uppercase font-semibold tracking-wider text-slate-300">Nome do Solicitante *</Label><Input placeholder="Digite seu nome completo" value={reqRequester} onChange={(event) => setReqRequester(event.target.value)} className="bg-slate-950 border-slate-800 text-white" required /></div>
                       <div className="space-y-2"><Label className="text-xs uppercase font-semibold tracking-wider text-slate-300">Área / Setor *</Label><Select value={reqArea} onValueChange={setReqArea}><SelectTrigger className="bg-slate-950 border-slate-800 text-white"><SelectValue placeholder="Selecione a área" /></SelectTrigger><SelectContent className="bg-slate-900 border-slate-800 text-white">{AREAS.map((area) => <SelectItem key={area} value={area}>{area}</SelectItem>)}</SelectContent></Select></div>
                     </div>
-                    <div className="space-y-2"><Label className="text-xs uppercase font-semibold tracking-wider text-slate-300">Item Solicitado (Catálogo) *</Label><div className="space-y-2"><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><Input placeholder="Buscar item por nome ou código..." value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} className="bg-slate-950 border-slate-800 text-white pl-9" /></div>{catalogQuery.isLoading ? <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" />Carregando catálogo...</div> : catalogQuery.isError ? <p className="text-sm text-red-400">Não foi possível carregar o catálogo.</p> : <Select value={reqItemId} onValueChange={setReqItemId}><SelectTrigger className="bg-slate-950 border-slate-800 text-white"><SelectValue placeholder="Selecione o item no catálogo" /></SelectTrigger><SelectContent className="bg-slate-900 border-slate-800 text-white max-h-60">{requestCatalogOptions.length === 0 ? <SelectItem value="empty" disabled>Nenhum item encontrado</SelectItem> : <>{requestCatalogOptions.map((item) => <SelectItem key={item.id} value={item.id.toString()}>{item.code} - {item.name} (Estoque: {item.stock} {item.unit})</SelectItem>)}{filteredCatalog.length > requestCatalogOptions.length && <SelectItem value="more-results" disabled>Refine a busca para ver mais resultados</SelectItem>}</>}</SelectContent></Select>}</div></div>
+                    <div className="space-y-2"><Label className="text-xs uppercase font-semibold tracking-wider text-slate-300">Item Solicitado (Catálogo) *</Label><p className="text-xs text-slate-500">Digite o part number ou parte da descrição e selecione uma sugestão.</p>{catalogQuery.isLoading ? <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" />Carregando catálogo...</div> : catalogQuery.isError ? <p className="text-sm text-red-400">Não foi possível carregar o catálogo.</p> : <div className="relative"><Command shouldFilter={true} className="overflow-visible rounded-xl border border-slate-800 bg-slate-950 text-white"><CommandInput value={itemSearch} onValueChange={handleItemSearchChange} onFocus={() => setItemAutocompleteOpen(true)} placeholder="Buscar por part number ou descrição..." className="text-white placeholder:text-slate-500" /><CommandList className={`${itemAutocompleteOpen && itemSearch.trim().length > 0 ? "block" : "hidden"} absolute left-0 right-0 top-full z-50 mt-2 max-h-72 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-2xl`}><CommandEmpty className="text-slate-400">Nenhum item encontrado no catálogo.</CommandEmpty><CommandGroup heading="Sugestões do catálogo" className="text-slate-400">{requestCatalogOptions.map((item) => <CommandItem key={item.id} value={`${item.code} ${item.name}`} onSelect={() => handleItemSelect(item)} className="cursor-pointer rounded-lg px-3 py-2 text-slate-200 data-[selected=true]:bg-slate-800 data-[selected=true]:text-white"><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-3"><span className="font-mono text-xs text-red-300">{item.code}</span><span className={`shrink-0 text-xs ${item.stock > 0 ? "text-emerald-300" : "text-slate-500"}`}>{item.stock.toLocaleString("pt-BR")} {item.unit}</span></div><p className="truncate text-sm">{item.name}</p></div><Check className={`h-4 w-4 shrink-0 ${reqItemId === item.id.toString() ? "opacity-100 text-red-400" : "opacity-0"}`} /></CommandItem>)}{filteredCatalog.length > requestCatalogOptions.length && <p className="px-3 py-2 text-xs text-slate-500">Refine a busca para ver mais resultados.</p>}</CommandGroup></CommandList></Command>{selectedRequestItem && <div className="mt-2 flex items-center justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs"><span className="truncate text-emerald-200">Selecionado: <strong>{selectedRequestItem.code}</strong> — {selectedRequestItem.name}</span><span className="ml-3 shrink-0 text-slate-400">Saldo: {selectedRequestItem.stock.toLocaleString("pt-BR")} {selectedRequestItem.unit}</span></div>}</div>}</div>
                     <div className="space-y-2 max-w-xs"><Label className="text-xs uppercase font-semibold tracking-wider text-slate-300">Quantidade *</Label><Input type="number" min="1" value={reqQuantity} onChange={(event) => setReqQuantity(event.target.value)} className="bg-slate-950 border-slate-800 text-white" required /></div>
                     <div className="space-y-2"><Label className="text-xs uppercase font-semibold tracking-wider text-slate-300">Justificativa / Motivo *</Label><Textarea placeholder="Informe o motivo da requisição..." value={reqJustification} onChange={(event) => setReqJustification(event.target.value)} className="bg-slate-950 border-slate-800 text-white min-h-[120px]" required /></div>
                     <Button type="submit" disabled={createReqMutation.isPending} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold h-11">{createReqMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ClipboardList className="w-4 h-4 mr-2" />}Enviar Requisição</Button>

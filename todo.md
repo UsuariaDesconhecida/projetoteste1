@@ -27,3 +27,9 @@
 - [x] Corrigir o teste de aprovação para selecionar um item com estoque positivo do catálogo real.
 - [x] Executar testes automatizados após a importação com sucesso total.
 - [x] Salvar checkpoint final da importação e atualização do catálogo.
+- [x] Substituir o seletor separado por busca e dropdown por um componente de Autocomplete fluido e intuitivo para seleção de itens do catálogo na Nova Requisição.
+- [x] Testar a digitação de part number ou descrição e a seleção do item correspondente.
+- [x] Salvar checkpoint da melhoria de usabilidade.
+- [x] Adicionar cobertura automatizada da lógica do autocomplete para busca por part number, descrição, limite de sugestões e seleção do item.
+- [x] Validar que o formulário não envia uma requisição quando há texto digitado sem item do catálogo selecionado.
+- [x] Isolar a preparação do payload da Nova Requisição e testar que texto digitado sem reqItemId não gera mutation.
