@@ -69,7 +69,8 @@ describe("Almoxarifado Forvia Advanced API & Business Logic Tests", () => {
 
     const items = await callerPublic.catalog.list();
     expect(items.length).toBeGreaterThan(0);
-    const item = items[0]!;
+    const item = items.find((candidate) => candidate.stock > 0) ?? items[0]!;
+    expect(item.stock).toBeGreaterThan(0);
 
     const reqResult = await callerPublic.requisition.create({
       requesterName: "Maria Souza",
