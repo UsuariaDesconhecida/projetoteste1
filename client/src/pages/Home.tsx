@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getNavigationForRole, ADMIN_NAVIGATION as ADMIN_MODULES } from "@shared/navigation";
+import { COOKIE_NAME } from "@shared/const";
 
 const AREAS = [
   "Compras",
@@ -124,7 +125,12 @@ export default function Home() {
   const statsQuery = trpc.stock.stats.useQuery(undefined, { enabled: isAdmin });
   const movementsQuery = trpc.stock.movements.useQuery(undefined, { enabled: isAdmin });
   const adminLoginMutation = trpc.auth.adminLogin.useMutation({
-    onSuccess: async () => {
+    onSuccess: async ({ sessionToken }) => {
+      try {
+        sessionStorage.setItem("manus-cookie", `${COOKIE_NAME}=${sessionToken}`);
+      } catch {
+        // O cookie HttpOnly continua sendo a sessão principal quando sessionStorage não está disponível.
+      }
       toast.success("Acesso administrativo realizado com sucesso.");
       setAdminEmail("");
       setAdminPassword("");
@@ -149,6 +155,9 @@ export default function Home() {
       setReqJustification("");
       setItemSearch("");
       setItemAutocompleteOpen(false);
+      void requisitionsQuery.refetch();
+      void statsQuery.refetch();
+      void catalogQuery.refetch();
     },
     onError: (error) => toast.error(`Erro ao enviar requisição: ${error.message}`),
   });
