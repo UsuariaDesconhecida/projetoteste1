@@ -5,8 +5,6 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { TRPCError } from "@trpc/server";
-import { SignJWT } from "jose";
-import { ENV } from "./_core/env";
 
 export const appRouter = router({
   system: systemRouter,
@@ -17,34 +15,6 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
-    customLogin: publicProcedure
-      .input(z.object({ email: z.string(), password: z.string() }))
-      .mutation(async ({ input, ctx }) => {
-        if (input.email === "almoxadm" && input.password === "admsuporte") {
-          const adminOpenId = "admin_almoxadm_fixed";
-          await db.upsertUser({
-            openId: adminOpenId,
-            name: "Administrador Forvia",
-            email: "almoxsuporte@forvia.com",
-            role: "admin",
-            loginMethod: "custom_admin",
-          });
-          const user = await db.getUserByOpenId(adminOpenId);
-          if (user) {
-            const secret = new TextEncoder().encode(ENV.cookieSecret);
-            const token = await new SignJWT({ openId: user.openId })
-              .setProtectedHeader({ alg: "HS256" })
-              .setIssuedAt()
-              .setExpirationTime("30d")
-              .sign(secret);
-
-            const cookieOptions = getSessionCookieOptions(ctx.req);
-            ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
-            return { success: true, user };
-          }
-        }
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Credenciais inválidas. Use almoxadm / admsuporte para administrador." });
-      }),
   }),
 
   catalog: router({

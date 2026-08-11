@@ -1,8 +1,53 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import { getNavigationForRole, isAdminEmail, normalizeRole } from "../shared/navigation";
 
 describe("Almoxarifado Forvia Advanced API & Business Logic Tests", () => {
+  it("promove somente o e-mail corporativo do almoxarifado para admin", () => {
+    expect(isAdminEmail("almoxsuporte@forvia.com")).toBe(true);
+    expect(isAdminEmail("ALMOXSUPORTE@FORVIA.COM")).toBe(true);
+    expect(isAdminEmail("colaborador@forvia.com")).toBe(false);
+    expect(normalizeRole("solicitante", "almoxsuporte@forvia.com")).toBe("admin");
+    expect(normalizeRole("admin", "colaborador@forvia.com")).toBe("admin");
+    expect(normalizeRole("user", "colaborador@forvia.com")).toBe("solicitante");
+  });
+
+  it("expõe somente Nova Requisição ao solicitante e os seis módulos ao admin", () => {
+    expect(getNavigationForRole("solicitante").map((item) => item.label)).toEqual(["Nova Requisição"]);
+    expect(getNavigationForRole("admin").map((item) => item.label)).toEqual([
+      "Dashboard",
+      "Materiais & EPIs",
+      "Nova Requisição",
+      "Requisições",
+      "Entrada Estoque",
+      "Relatórios",
+    ]);
+  });
+
+  it("bloqueia rotas administrativas para solicitante não autenticado", async () => {
+    const ctxRequester: TrpcContext = {
+      user: {
+        id: 4,
+        openId: "requester_test",
+        name: "Solicitante Teste",
+        email: "colaborador@forvia.com",
+        loginMethod: "oauth",
+        role: "solicitante",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastSignedIn: new Date(),
+      },
+      req: { protocol: "https", headers: {} } as any,
+      res: {} as any,
+    };
+    const callerRequester = appRouter.createCaller(ctxRequester);
+
+    await expect(callerRequester.requisition.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(callerRequester.stock.stats()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(callerRequester.stock.movements()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
   it("permite listar itens do catálogo publicamente", async () => {
     const ctx: TrpcContext = {
       user: undefined,

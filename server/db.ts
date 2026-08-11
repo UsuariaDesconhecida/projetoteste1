@@ -1,7 +1,8 @@
-import { eq, desc, sql, count, sum } from "drizzle-orm";
+import { and, eq, desc, gte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, items, InsertItem, Item, requisitions, InsertRequisition, Requisition, stockMovements, InsertStockMovement, StockMovement } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { isAdminEmail } from "../shared/navigation";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -35,8 +36,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       lastSignedIn: user.lastSignedIn ?? new Date(),
     };
 
-    if (user.openId === ENV.ownerOpenId || user.email === 'almoxsuporte@forvia.com') {
+    if (user.openId === ENV.ownerOpenId || isAdminEmail(values.email)) {
       values.role = 'admin';
+    } else if (!user.role || user.role === 'user') {
+      values.role = 'solicitante';
     }
 
     await db.insert(users).values(values).onDuplicateKeyUpdate({
@@ -119,42 +122,40 @@ export async function updateRequisitionStatus(id: number, status: 'aprovada' | '
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const reqs = await db.select().from(requisitions).where(eq(requisitions.id, id)).limit(1);
-  if (reqs.length === 0) throw new Error("Requisição não encontrada");
-  const req = reqs[0];
+  await db.transaction(async tx => {
+    const reqs = await tx.select().from(requisitions).where(eq(requisitions.id, id)).limit(1);
+    if (reqs.length === 0) throw new Error("Requisição não encontrada");
+    const req = reqs[0];
 
-  if (req.status !== 'pendente') {
-    throw new Error("Esta requisição já foi avaliada.");
-  }
-
-  // Se for aprovada, valida o estoque ANTES de atualizar o status
-  if (status === 'aprovada') {
-    const itms = await db.select().from(items).where(eq(items.id, req.itemId)).limit(1);
-    if (itms.length === 0) throw new Error("Item associado não encontrado no catálogo.");
-    const itm = itms[0];
-
-    if (itm.stock < req.quantity) {
-      throw new Error(`Estoque insuficiente (${itm.stock} disponíveis, solicitados ${req.quantity}). Não é possível aprovar.`);
+    if (req.status !== 'pendente') {
+      throw new Error("Esta requisição já foi avaliada.");
     }
 
-    // Decrementar estoque
-    await updateItemStock(req.itemId, -req.quantity);
+    if (status === 'aprovada') {
+      const [stockUpdate] = await tx.update(items)
+        .set({ stock: sql`stock - ${req.quantity}` })
+        .where(and(eq(items.id, req.itemId), gte(items.stock, req.quantity)));
 
-    // Registrar movimento de estoque
-    await db.insert(stockMovements).values({
-      itemId: req.itemId,
-      type: 'saida',
-      quantity: req.quantity,
-      reason: `Requisição #${req.id} aprovada (Área: ${req.area})`,
-      responsible: adminName,
-      requisitionId: req.id,
-    });
-  }
+      if (!stockUpdate || stockUpdate.affectedRows !== 1) {
+        const itms = await tx.select({ stock: items.stock }).from(items).where(eq(items.id, req.itemId)).limit(1);
+        const available = itms[0]?.stock ?? 0;
+        throw new Error(`Estoque insuficiente (${available} disponíveis, solicitados ${req.quantity}). Não é possível aprovar.`);
+      }
 
-  // Atualizar status
-  await db.update(requisitions)
-    .set({ status, adminObservation })
-    .where(eq(requisitions.id, id));
+      await tx.insert(stockMovements).values({
+        itemId: req.itemId,
+        type: 'saida',
+        quantity: req.quantity,
+        reason: `Requisição #${req.id} aprovada (Área: ${req.area})`,
+        responsible: adminName,
+        requisitionId: req.id,
+      });
+    }
+
+    await tx.update(requisitions)
+      .set({ status, adminObservation })
+      .where(eq(requisitions.id, id));
+  });
 }
 
 export async function getStockMovements() {
